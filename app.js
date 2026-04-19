@@ -5,7 +5,7 @@
 'use strict';
 
 // ── Track Data (start empty — add your own MP4s!) ─────────────────────────
-const TRACKS = [
+let TRACKS = [
   {
     id: 1,
     title: '月光のレール、星の海のダイバー',
@@ -33,6 +33,82 @@ const state = {
   isDragging: false,
   waveformPhase: 0,
 };
+
+// ── IndexedDB & LocalStorage ──────────────────────────────────────────────────
+const DB_NAME = 'VibePlayerDB';
+const STORE_NAME = 'tracksStore';
+const DB_VERSION = 1;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e) => {
+      if (!e.target.result.objectStoreNames.contains(STORE_NAME)) {
+        e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveTrackToDB(track, file) {
+  return openDB().then(db => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const data = { ...track, fileBlob: file };
+      if (typeof data.video_url === 'string' && data.video_url.startsWith('blob:')) delete data.video_url;
+      if (typeof data.thumbnail === 'string' && data.thumbnail.startsWith('blob:')) delete data.thumbnail;
+      store.put(data);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }).catch(err => console.warn('DB Save Error:', err));
+}
+
+function loadTracksFromDB() {
+  return openDB().then(db => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }).catch(err => {
+    console.warn('DB Load Error:', err);
+    return [];
+  });
+}
+
+function deleteTrackFromDB(id) {
+  return openDB().then(db => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }).catch(err => console.warn('DB Delete Error:', err));
+}
+
+function saveStateToLocal() {
+  localStorage.setItem('vibe_likes', JSON.stringify(Array.from(state.likedTracks)));
+  localStorage.setItem('vibe_volume', state.volume);
+}
+
+function loadStateFromLocal() {
+  try {
+    const likes = localStorage.getItem('vibe_likes');
+    if (likes) state.likedTracks = new Set(JSON.parse(likes));
+    const vol = localStorage.getItem('vibe_volume');
+    if (vol !== null) state.volume = parseFloat(vol);
+  } catch (e) {
+    console.warn('Failed to parse local state', e);
+  }
+}
 
 // ── DOM References ────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -216,7 +292,7 @@ function addNewTrack(file) {
   const GENRES   = ['electronic', 'ambient', 'cinematic', 'lofi', 'synthwave'];
   const COLORS   = ['#8b5cf6', '#06b6d4', '#ec4899', '#10b981', '#f59e0b', '#a78bfa', '#38bdf8'];
 
-  TRACKS.push({
+  const newTrack = {
     id:        newId,
     title:     title,
     artist:    'Unknown Artist',
@@ -225,7 +301,10 @@ function addNewTrack(file) {
     video_url: blobUrl,
     thumbnail: blobUrl,
     color:     COLORS[Math.floor(Math.random() * COLORS.length)],
-  });
+  };
+
+  TRACKS.push(newTrack);
+  saveTrackToDB(newTrack, file);
 }
 
 function createTrackCard(track, num) {
@@ -408,11 +487,12 @@ function deleteTrack(id) {
   const wasPlaying = state.currentTrackId === id;
 
   // Revoke blob URL to free memory
-  if (TRACKS[idx].video_url.startsWith('blob:')) {
+  if (TRACKS[idx].video_url && TRACKS[idx].video_url.startsWith('blob:')) {
     URL.revokeObjectURL(TRACKS[idx].video_url);
   }
 
   TRACKS.splice(idx, 1);
+  deleteTrackFromDB(id);
 
   // If the deleted track was playing, stop everything
   if (wasPlaying) {
@@ -452,7 +532,7 @@ function triggerUpload(trackId, overlayEl, cardVideoEl) {
       const track = getTrackById(trackId);
       if (!track) { overlayEl.classList.remove('active'); return; }
 
-      if (track.video_url.startsWith('blob:')) {
+      if (track.video_url && track.video_url.startsWith('blob:')) {
         URL.revokeObjectURL(track.video_url);
       }
 
@@ -467,6 +547,8 @@ function triggerUpload(trackId, overlayEl, cardVideoEl) {
       track.thumbnail  = blobUrl;
       track.title      = cleanName;
       // Keep artist, genre, color as-is
+
+      saveTrackToDB(track, file);
 
       // Update card video element immediately
       cardVideoEl.src = blobUrl;
@@ -687,6 +769,8 @@ function updateVolume(val) {
   // Volume slider gradient
   const pct = val;
   els.volumeSlider.style.background = `linear-gradient(to right, #8b5cf6 ${pct}%, rgba(255,255,255,0.12) ${pct}%)`;
+
+  saveStateToLocal();
 }
 
 function toggleMute() {
@@ -742,6 +826,7 @@ function toggleLike() {
     setTimeout(() => { els.heartBtn.style.transform = ''; }, 300);
   }
   updateHeartButton();
+  saveStateToLocal();
 }
 
 // ── Waveform Visualizer Canvas ────────────────────────────────────────────────
@@ -1010,7 +1095,30 @@ function initKeyboardShortcuts() {
 }
 
 // ── Init App ───────────────────────────────────────────────────────────────────
-function initApp() {
+async function initApp() {
+  loadStateFromLocal();
+
+  try {
+    const isInit = localStorage.getItem('vibe_db_init');
+    if (!isInit) {
+      for (const t of TRACKS) await saveTrackToDB(t, null);
+      localStorage.setItem('vibe_db_init', 'true');
+    } else {
+      const savedTracks = await loadTracksFromDB();
+      if (savedTracks && savedTracks.length > 0) {
+        TRACKS = savedTracks.map(t => {
+          if (t.fileBlob) {
+            const blobUrl = URL.createObjectURL(t.fileBlob);
+            return { ...t, video_url: blobUrl, thumbnail: blobUrl };
+          }
+          return t;
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load from DB", err);
+  }
+
   // Show skeleton briefly then render
   setTimeout(() => {
     els.skeletonGrid.style.display = 'none';
@@ -1052,7 +1160,7 @@ function initApp() {
   els.volumeSlider.addEventListener('input', e => updateVolume(parseInt(e.target.value)));
 
   // Initialize volume display
-  updateVolume(80);
+  updateVolume(Math.round(state.volume * 100));
 
   // Video events
   const vid = els.heroVideo;
@@ -1101,7 +1209,7 @@ function initApp() {
 
 
   // Initial volume gradient
-  updateVolume(80);
+  updateVolume(Math.round(state.volume * 100));
 
   console.log('🎵 VIBE Player ready — %c press Space to play', 'color: #8b5cf6; font-weight: bold');
 }
