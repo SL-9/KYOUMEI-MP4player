@@ -12,8 +12,8 @@ const TRACKS = [
     artist: 'Kyoumei',
     genre: 'cinematic',
     duration: '--:--',
-    video_url: '月光のレール、星の海のダイバー.mp4',
-    thumbnail: '月光のレール、星の海のダイバー.mp4',
+    video_url: '月光のレール、星の海のダイバー.mp4',
+    thumbnail: '月光のレール、星の海のダイバー.mp4',
     color: '#06b6d4',
   }
 ];
