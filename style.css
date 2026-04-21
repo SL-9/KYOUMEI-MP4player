@@ -106,6 +106,17 @@ a { text-decoration: none; color: inherit; }
   transition: box-shadow 0.3s;
 }
 
+.header-left {
+  display: flex; align-items: center;
+  flex: 1; min-width: 0;
+}
+
+.header-right {
+  display: flex; align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .app-header.scrolled {
   box-shadow: 0 2px 40px rgba(0,0,0,0.6), 0 1px 0 var(--border-glow);
 }
@@ -166,6 +177,9 @@ a { text-decoration: none; color: inherit; }
 
 .header-nav {
   display: flex; gap: 8px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .nav-link {
@@ -212,7 +226,49 @@ a { text-decoration: none; color: inherit; }
 
 .search-bar input::placeholder { color: var(--text-muted); }
 
+/* ── Reset Button ───────────────────────────────── */
+.reset-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all 0.22s var(--ease-smooth);
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.reset-btn-label {
+  display: none; /* 常に非表示（アイコンのみ） */
+}
+
+.reset-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.2);
+}
+
+.reset-btn:hover svg {
+  animation: spin-once 0.45s var(--ease-smooth);
+}
+
+.reset-btn:active {
+  transform: scale(0.9);
+}
+
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
 /* ── Hero Section ───────────────────────────────── */
+
 .hero-section {
   display: flex; align-items: center; justify-content: space-between;
   padding: 60px 40px 48px;
@@ -1475,11 +1531,12 @@ a { text-decoration: none; color: inherit; }
     overflow: hidden;
   }
   .header-left       { min-width: 0; flex-shrink: 1; overflow: hidden; }
+  .header-right      { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .logo-icon-img     { width: 32px; height: 32px; flex-shrink: 0; }
   .logo              { gap: 6px; min-width: 0; overflow: hidden; }
   .logo-text         { font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; }
   .logo-text-sub     { display: none; }
-  .header-right      { flex-shrink: 0; }
+  .reset-btn         { width: 32px; height: 32px; }
   .search-bar        { padding: 6px 10px; }
   .search-bar input  { width: 70px; font-size: 0.78rem; }
   .search-bar svg    { width: 13px; height: 13px; flex-shrink: 0; }
@@ -1584,3 +1641,29 @@ a { text-decoration: none; color: inherit; }
   .hero-title     { font-size: clamp(1.3rem, 7vw, 1.8rem); }
 }
 
+/* ── タッチデバイス (hover不可) 向け ─────────────────── */
+/* スマホではhoverが効かないためボタン類を常時表示 */
+@media (hover: none) {
+  /* カードのメニューボタン (⋯) を常時表示 */
+  .card-menu-btn {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* カードのプレイボタンを常時表示 */
+  .track-card-play-btn {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  /* ヒーロー動画のフルスクリーンボタンを常時表示 */
+  .hero-fs-btn {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* カード番号はメニューボタンと重なるので非表示 */
+  .track-card-number {
+    display: none;
+  }
+}

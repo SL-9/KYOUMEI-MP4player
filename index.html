@@ -35,6 +35,13 @@
         <a href="#" class="nav-link">Library</a>
       </nav>
       <div class="header-right">
+        <button class="reset-btn" id="resetBtn" aria-label="ライブラリをデフォルトに戻す" title="ライブラリをリセット">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+          </svg>
+          <span class="reset-btn-label">リセット</span>
+        </button>
         <div class="search-bar">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -82,7 +89,7 @@
           </div>
           <div class="hero-visual aspect-square" id="heroVisual">
             <div class="hero-video-wrapper" id="heroVideoWrapper">
-              <video id="heroVideo" muted loop playsinline class="hero-video">
+              <video id="heroVideo" muted loop playsinline webkit-playsinline class="hero-video" preload="auto">
                 <source src="" type="video/mp4" />
               </video>
               <div class="hero-video-overlay">
@@ -140,7 +147,7 @@
       <!-- Track Info -->
       <div class="player-track-info">
         <div class="player-thumb-wrapper">
-          <video id="playerThumb" muted loop playsinline class="player-thumb"></video>
+          <video id="playerThumb" muted loop playsinline webkit-playsinline class="player-thumb"></video>
           <div class="player-thumb-overlay">
             <div class="mini-visualizer" id="miniViz">
               <span></span><span></span><span></span><span></span><span></span>
@@ -178,7 +185,7 @@
           </button>
           <button class="ctrl-btn" id="nextBtn" aria-label="Next track">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 18l8.5-6L6 6v12zm2.5-6 6-4.5v9L8.5 12zM16 6h2v12h-2z"/>
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
             </svg>
           </button>
           <button class="ctrl-btn" id="loopBtn" aria-label="Toggle loop" title="Loop">

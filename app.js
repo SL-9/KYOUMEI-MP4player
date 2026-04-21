@@ -147,6 +147,7 @@ const els = {
   appHeader:       $('appHeader'),
   particleCanvas:  $('particleCanvas'),
   fullscreenBtn:   $('fullscreenBtn'),
+  resetBtn:        $('resetBtn'),
 };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -319,12 +320,12 @@ function createTrackCard(track, num) {
   card.innerHTML = `
     <div class="track-card-video-wrap">
       <video
-        src="${track.video_url}"
+        data-src="${track.video_url}"
         muted
         loop
         playsinline
-        preload="metadata"
-        loading="lazy"
+        webkit-playsinline
+        preload="none"
         tabindex="-1"
       ></video>
       <div class="track-card-overlay"></div>
@@ -394,6 +395,21 @@ function createTrackCard(track, num) {
   const menuBtn        = card.querySelector('.card-menu-btn');
   const dropdown       = card.querySelector('.card-dropdown');
   const uploadOverlay  = card.querySelector('.card-upload-overlay');
+
+  // ── Intersection Observer: ビューポート内でload() ──
+  const observer = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const dataSrc = vid.dataset.src;
+        if (dataSrc && !vid.src) {
+          vid.src = dataSrc;
+          vid.load();
+        }
+        obs.unobserve(vid);
+      }
+    });
+  }, { rootMargin: '200px' });
+  observer.observe(vid);
 
   // ── Dropdown open/close ─────────────────────────
   let dropdownOpen = false;
@@ -625,11 +641,16 @@ function playTrack(id) {
   els.heroVideo.volume = state.volume;
   els.heroVideo.muted = state.isMuted;
   els.heroVideo.loop = state.isLooping;
+  // iOSインライン再生を強制（動的に属性を付与）
+  els.heroVideo.setAttribute('playsinline', '');
+  els.heroVideo.setAttribute('webkit-playsinline', '');
 
   // Update player thumb
   els.playerThumb.src = track.video_url;
   els.playerThumb.muted = true;
   els.playerThumb.loop = true;
+  els.playerThumb.setAttribute('playsinline', '');
+  els.playerThumb.setAttribute('webkit-playsinline', '');
 
   // Smooth fade in player
   els.playerBar.classList.add('visible');
@@ -679,8 +700,42 @@ function togglePlayPause() {
     }).catch(() => {});
   }
 
-  // Update card icons
-  renderGallery(getFilteredTracks());
+  // スクロール位置リセットを防ぐため、全再描画ではなくカードアイコンのみ更新
+  updateCardPlayState();
+}
+
+// ── カードのプレイ状態アイコンを軽量更新（スクロール維持）────────────────
+function updateCardPlayState() {
+  document.querySelectorAll('.track-card[data-id]').forEach(card => {
+    const id = parseInt(card.dataset.id);
+    const isCurrent = id === state.currentTrackId;
+    card.classList.toggle('playing', isCurrent);
+
+    const playBtn = card.querySelector('.track-card-play-btn');
+    if (playBtn) {
+      if (isCurrent && state.isPlaying) {
+        playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+      } else {
+        playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>`;
+      }
+    }
+
+    const badge = card.querySelector('.track-card-badge');
+    if (badge) badge.textContent = isCurrent ? '▶ Playing' : '';
+
+    const footer = card.querySelector('.track-card-footer > div');
+    if (footer && isCurrent) {
+      if (state.isPlaying) {
+        footer.innerHTML = `<div class="card-eq"><span></span><span></span><span></span><span></span><span></span></div>`;
+      } else {
+        const track = getTrackById(id);
+        footer.innerHTML = `<span class="track-card-duration">${track ? track.duration : '--:--'}</span>`;
+      }
+    } else if (footer && !isCurrent) {
+      const track = getTrackById(id);
+      footer.innerHTML = `<span class="track-card-duration">${track ? track.duration : '--:--'}</span>`;
+    }
+  });
 }
 
 function updatePlayIcon(playing) {
@@ -1159,6 +1214,11 @@ async function initApp() {
   // Volume
   els.volumeSlider.addEventListener('input', e => updateVolume(parseInt(e.target.value)));
 
+  // Reset button
+  if (els.resetBtn) {
+    els.resetBtn.addEventListener('click', resetToDefault);
+  }
+
   // Initialize volume display
   updateVolume(Math.round(state.volume * 100));
 
@@ -1217,6 +1277,35 @@ async function initApp() {
 // Start
 document.addEventListener('DOMContentLoaded', initApp);
 
+// ── Reset to Default ──────────────────────────────────────────────────────
+async function resetToDefault() {
+  const confirmed = confirm(
+    '\u30e9イブラリをデフォルトに戻しますか？\n\n• 追加したすべてのトラックが削除されます\n• デフォルトのトラック 1 件のみの状態に戻ります'
+  );
+  if (!confirmed) return;
+
+  try {
+    // IndexedDB のトラックストアを全クリア
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('DB clear error:', e);
+  }
+
+  // LocalStorage のリセット（初期化フラグも削除することでデフォルトトラックが再登録される）
+  localStorage.removeItem('vibe_db_init');
+  localStorage.removeItem('vibe_likes');
+  localStorage.removeItem('vibe_volume');
+
+  // ページをリロードしてデフォルト状態で起動
+  location.reload();
+}
+
 // ── Aspect Ratio Switcher ──────────────────────────────────────────────────────
 function initAspectSwitcher() {
   const heroVisual = els.heroVisual;
@@ -1260,10 +1349,14 @@ function initAspectSwitcher() {
 function initHeroFullscreen() {
   const wrapper  = document.getElementById('heroVideoWrapper');
   const fsBtn    = document.getElementById('heroFsBtn');
+  const heroVid  = document.getElementById('heroVideo');
   if (!wrapper || !fsBtn) return;
 
   const iconExpand   = fsBtn.querySelector('.hero-fs-icon-expand');
   const iconCompress = fsBtn.querySelector('.hero-fs-icon-compress');
+
+  // iOSかどうかを判定
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
   // ── フルスクリーン ON/OFF トグル ──
   window.toggleHeroFullscreen = function() {
@@ -1273,14 +1366,30 @@ function initHeroFullscreen() {
                || document.msFullscreenElement;
 
     if (!fsEl) {
-      // フルスクリーンに入る
+      // iOS Safari: divへのfullscreenAPIは非対応のため video.webkitEnterFullscreen() を使う
+      if (isIOS && heroVid && heroVid.webkitEnterFullscreen) {
+        heroVid.webkitEnterFullscreen();
+        return;
+      }
+
+      // フルスクリーンに入る（その他ブラウザ）
       const req = wrapper.requestFullscreen
                || wrapper.webkitRequestFullscreen
                || wrapper.mozRequestFullScreen
                || wrapper.msRequestFullscreen;
-      if (req) req.call(wrapper).catch(err => {
-        console.warn('Fullscreen request failed:', err);
-      });
+      if (req) {
+        req.call(wrapper).catch(err => {
+          // フォールバック: video 要素で試みる
+          if (heroVid && heroVid.webkitEnterFullscreen) {
+            heroVid.webkitEnterFullscreen();
+          } else {
+            console.warn('Fullscreen request failed:', err);
+          }
+        });
+      } else if (heroVid && heroVid.webkitEnterFullscreen) {
+        // APIが存在しない場合のフォールバック
+        heroVid.webkitEnterFullscreen();
+      }
     } else {
       // フルスクリーンを終了
       const exit = document.exitFullscreen
@@ -1289,7 +1398,7 @@ function initHeroFullscreen() {
                 || document.msExitFullscreen;
       if (exit) exit.call(document);
     }
-  }
+  };
 
   // ── アイコン切り替え ──
   function updateFsIcon(isFs) {
@@ -1320,10 +1429,22 @@ function initHeroFullscreen() {
     });
   }
 
-  // ── イベント: ダブルクリックでもフルスクリーン ──
+  // ── イベント: ダブルタップ/クリックでもフルスクリーン ──
   wrapper.addEventListener('dblclick', window.toggleHeroFullscreen);
 
-  // ── イベント: フルスクリーン状態変化を検知 ──
+  // ── iOS: video.webkitEnterFullscreen() 時のイベント ──
+  if (heroVid) {
+    heroVid.addEventListener('webkitbeginfullscreen', () => {
+      updateFsIcon(true);
+      wrapper.classList.add('is-fullscreen');
+    });
+    heroVid.addEventListener('webkitendfullscreen', () => {
+      updateFsIcon(false);
+      wrapper.classList.remove('is-fullscreen');
+    });
+  }
+
+  // ── イベント: フルスクリーン状態変化を検知（非iOS） ──
   const fsChangeEvents = ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'];
   fsChangeEvents.forEach(ev => {
     document.addEventListener(ev, () => {
@@ -1334,7 +1455,6 @@ function initHeroFullscreen() {
         || document.msFullscreenElement
       );
       updateFsIcon(isFs);
-
       if (isFs) {
         wrapper.classList.add('is-fullscreen');
       } else {
@@ -1343,8 +1463,6 @@ function initHeroFullscreen() {
     });
   });
 
-  // ── キーボード: F キーでヒーロー動画フルスクリーン (フォーカスがinputでないとき) ──
-  // ※ 既存の KeyF (openFullscreen) を上書きしないよう wrapper がホバー中かのフラグで制御
   wrapper.addEventListener('mouseenter', () => { wrapper._hovered = true;  });
   wrapper.addEventListener('mouseleave', () => { wrapper._hovered = false; });
 }
