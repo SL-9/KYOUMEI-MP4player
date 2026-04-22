@@ -148,6 +148,7 @@ const els = {
   particleCanvas:  $('particleCanvas'),
   fullscreenBtn:   $('fullscreenBtn'),
   resetBtn:        $('resetBtn'),
+  audioPlayer:     $('audioPlayer'),
 };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -525,10 +526,11 @@ function deleteTrack(id) {
 
   // If the deleted track was playing, stop everything
   if (wasPlaying) {
+    els.audioPlayer.pause();
+    els.audioPlayer.src = '';
     els.heroVideo.pause();
     els.heroVideo.src = '';
     els.playerThumb.src = '';
-    els.heroVideo.src = '';
     state.currentTrackId = null;
     state.isPlaying = false;
     updatePlayIcon(false);
@@ -588,13 +590,16 @@ function triggerUpload(trackId, overlayEl, cardVideoEl) {
 
       // If this track is currently playing, update the player
       if (state.currentTrackId === trackId) {
-        const curTime = els.heroVideo.currentTime;
+        els.audioPlayer.src = blobUrl;
+        els.audioPlayer.currentTime = 0;
         els.heroVideo.src = blobUrl;
         els.heroVideo.currentTime = 0;
         els.playerThumb.src = blobUrl;
-        els.heroVideo.src = blobUrl;
         els.playerTitle.textContent = track.title;
-        if (state.isPlaying) els.heroVideo.play().catch(() => {});
+        if (state.isPlaying) {
+          els.audioPlayer.play().catch(() => {});
+          els.heroVideo.play().catch(() => {});
+        }
       }
 
       // Hide overlay and refresh gallery
@@ -655,14 +660,18 @@ function playTrack(id) {
   state.currentTrackId = id;
   state.isPlaying = true;
 
-  // Update hero video (main playback)
+  // ── 映像（heroVideo）: 常にミュート・映像専用 ──
   els.heroVideo.src = track.video_url;
-  els.heroVideo.volume = state.volume;
-  els.heroVideo.muted = state.isMuted;
+  els.heroVideo.muted = true;   // 常にミュート（音声はaudioPlayerで再生）
   els.heroVideo.loop = state.isLooping;
-  // iOSインライン再生を強制（動的に属性を付与）
   els.heroVideo.setAttribute('playsinline', '');
   els.heroVideo.setAttribute('webkit-playsinline', '');
+
+  // ── 音声（audioPlayer）: 音声専用 ──
+  els.audioPlayer.src = track.video_url;
+  els.audioPlayer.volume = state.volume;
+  els.audioPlayer.muted = state.isMuted;
+  els.audioPlayer.loop = state.isLooping;
 
   // Update player thumb
   els.playerThumb.src = track.video_url;
@@ -686,8 +695,11 @@ function playTrack(id) {
   // Update gallery
   renderGallery(getFilteredTracks());
 
-  // Play
-  els.heroVideo.play().then(() => {
+  // Play: 音声を先に再生し、映像も同時に再生
+  Promise.all([
+    els.audioPlayer.play(),
+    els.heroVideo.play()
+  ]).then(() => {
     els.playerThumb.play().catch(() => {});
     updatePlayIcon(true);
     updateHeartButton();
@@ -705,13 +717,15 @@ function togglePlayPause() {
   if (!state.currentTrackId) return;
 
   if (state.isPlaying) {
+    els.audioPlayer.pause();
     els.heroVideo.pause();
     els.playerThumb.pause();
     state.isPlaying = false;
     els.miniViz.classList.remove('active');
     updatePlayIcon(false);
   } else {
-    els.heroVideo.play().then(() => {
+    els.audioPlayer.play().then(() => {
+      els.heroVideo.play().catch(() => {});
       els.playerThumb.play().catch(() => {});
       state.isPlaying = true;
       els.miniViz.classList.add('active');
@@ -791,7 +805,8 @@ function playPrev() {
   if (!filtered.length) return;
 
   // If past 3 seconds, restart current
-  if (els.heroVideo.currentTime > 3) {
+  if (els.audioPlayer.currentTime > 3) {
+    els.audioPlayer.currentTime = 0;
     els.heroVideo.currentTime = 0;
     return;
   }
@@ -803,41 +818,47 @@ function playPrev() {
 
 // ── Progress & Time ───────────────────────────────────────────────────────────
 function updateProgress() {
-  const vid = els.heroVideo;
-  if (!vid.duration || isNaN(vid.duration)) return;
+  const aud = els.audioPlayer;
+  if (!aud.duration || isNaN(aud.duration)) return;
 
-  const pct = (vid.currentTime / vid.duration) * 100;
-  state.currentTime = vid.currentTime;
-  state.duration = vid.duration;
+  const pct = (aud.currentTime / aud.duration) * 100;
+  state.currentTime = aud.currentTime;
+  state.duration = aud.duration;
 
   els.progressFill.style.width = pct + '%';
   els.progressThumb.style.left = pct + '%';
-  els.currentTime.textContent = formatTime(vid.currentTime);
-  els.totalTime.textContent = formatTime(vid.duration);
+  els.currentTime.textContent = formatTime(aud.currentTime);
+  els.totalTime.textContent = formatTime(aud.duration);
 
   // Buffer
-  if (vid.buffered.length > 0) {
-    const bufPct = (vid.buffered.end(vid.buffered.length - 1) / vid.duration) * 100;
+  if (aud.buffered.length > 0) {
+    const bufPct = (aud.buffered.end(aud.buffered.length - 1) / aud.duration) * 100;
     els.progressBuffer.style.width = bufPct + '%';
   }
 
   // Update ARIA
   els.progressTrack.setAttribute('aria-valuenow', Math.round(pct));
+
+  // 映像と音声の同期（0.3秒以上ずれたら補正）
+  if (Math.abs(els.heroVideo.currentTime - aud.currentTime) > 0.3) {
+    els.heroVideo.currentTime = aud.currentTime;
+  }
 }
 
 function seekTo(e) {
   const rect = els.progressTrack.getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
   const pct = x / rect.width;
-  if (els.heroVideo.duration) {
-    els.heroVideo.currentTime = pct * els.heroVideo.duration;
+  if (els.audioPlayer.duration) {
+    els.audioPlayer.currentTime = pct * els.audioPlayer.duration;
+    els.heroVideo.currentTime = pct * els.audioPlayer.duration;
   }
 }
 
 // ── Volume ────────────────────────────────────────────────────────────────────
 function updateVolume(val) {
   state.volume = val / 100;
-  els.heroVideo.volume = state.volume;
+  els.audioPlayer.volume = state.volume;
   els.volumeSlider.value = val;
 
   // Volume slider gradient
@@ -849,7 +870,7 @@ function updateVolume(val) {
 
 function toggleMute() {
   state.isMuted = !state.isMuted;
-  els.heroVideo.muted = state.isMuted;
+  els.audioPlayer.muted = state.isMuted;
 
   const iconVol  = els.muteBtn.querySelector('.icon-vol');
   const iconMute = els.muteBtn.querySelector('.icon-mute');
@@ -1120,10 +1141,10 @@ function initProgressDrag() {
 
   // Keyboard seek
   track.addEventListener('keydown', e => {
-    const dur = els.heroVideo.duration;
+    const dur = els.audioPlayer.duration;
     if (!dur) return;
-    if (e.key === 'ArrowLeft')  els.heroVideo.currentTime = Math.max(0, els.heroVideo.currentTime - 5);
-    if (e.key === 'ArrowRight') els.heroVideo.currentTime = Math.min(dur, els.heroVideo.currentTime + 5);
+    if (e.key === 'ArrowLeft')  { els.audioPlayer.currentTime = Math.max(0, els.audioPlayer.currentTime - 5); els.heroVideo.currentTime = els.audioPlayer.currentTime; }
+    if (e.key === 'ArrowRight') { els.audioPlayer.currentTime = Math.min(dur, els.audioPlayer.currentTime + 5); els.heroVideo.currentTime = els.audioPlayer.currentTime; }
   });
 }
 
@@ -1140,11 +1161,11 @@ function initKeyboardShortcuts() {
         break;
       case 'ArrowRight':
         e.preventDefault();
-        if (els.heroVideo.duration) els.heroVideo.currentTime = Math.min(els.heroVideo.duration, els.heroVideo.currentTime + 10);
+        if (els.audioPlayer.duration) { els.audioPlayer.currentTime = Math.min(els.audioPlayer.duration, els.audioPlayer.currentTime + 10); els.heroVideo.currentTime = els.audioPlayer.currentTime; }
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        els.heroVideo.currentTime = Math.max(0, els.heroVideo.currentTime - 10);
+        els.audioPlayer.currentTime = Math.max(0, els.audioPlayer.currentTime - 10); els.heroVideo.currentTime = els.audioPlayer.currentTime;
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -1221,6 +1242,7 @@ async function initApp() {
   els.loopBtn.addEventListener('click', () => {
     state.isLooping = !state.isLooping;
     els.heroVideo.loop = state.isLooping;
+    els.audioPlayer.loop = state.isLooping;
     els.loopBtn.classList.toggle('active', state.isLooping);
   });
 
@@ -1241,47 +1263,54 @@ async function initApp() {
   // Initialize volume display
   updateVolume(Math.round(state.volume * 100));
 
-  // Video events
+  // ── 音声イベント（audioPlayer が権威ソース）──
+  const aud = els.audioPlayer;
   const vid = els.heroVideo;
 
-  vid.addEventListener('timeupdate',  updateProgress);
-  vid.addEventListener('loadedmetadata', () => {
-    els.totalTime.textContent = formatTime(vid.duration);
-    state.duration = vid.duration;
+  aud.addEventListener('timeupdate',  updateProgress);
+  aud.addEventListener('loadedmetadata', () => {
+    els.totalTime.textContent = formatTime(aud.duration);
+    state.duration = aud.duration;
   });
 
-  vid.addEventListener('ended', () => {
+  aud.addEventListener('ended', () => {
     if (!state.isLooping) {
       playNext();
     }
   });
 
-  vid.addEventListener('play', () => {
+  aud.addEventListener('play', () => {
     state.isPlaying = true;
     updatePlayIcon(true);
     els.miniViz.classList.add('active');
+    // 映像も同期再生
+    if (vid.paused && state.currentTrackId) {
+      vid.play().catch(() => {});
+    }
   });
 
-  let lastPauseTime = 0;
-  
-  vid.addEventListener('pause', () => {
-    lastPauseTime = Date.now();
-    
-    // フルスクリーン操作中フラグがある場合は即時再開（以前のロジックの名残・保険）
-    if (state._fullscreenTransition) {
-      if (state.isPlaying && state.currentTrackId) {
-        vid.play().catch(() => {});
-      }
-      return;
-    }
+  aud.addEventListener('pause', () => {
     state.isPlaying = false;
     updatePlayIcon(false);
     els.miniViz.classList.remove('active');
   });
 
-  vid.addEventListener('error', () => {
-    console.warn('Video error, skipping to next...');
+  aud.addEventListener('error', () => {
+    console.warn('Audio error, skipping to next...');
     setTimeout(playNext, 1000);
+  });
+
+  // 映像がズーム等で止まっても音声には影響しない。
+  // 映像が再開可能になったら自動同期で追従する。
+  vid.addEventListener('pause', () => {
+    // 映像が止まっても state.isPlaying は変えない（音声が権威）
+  });
+
+  vid.addEventListener('play', () => {
+    // 映像の再生開始時に音声と時間を同期
+    if (Math.abs(vid.currentTime - aud.currentTime) > 0.5) {
+      vid.currentTime = aud.currentTime;
+    }
   });
 
   // Init subsystems
@@ -1467,32 +1496,14 @@ function initHeroFullscreen() {
     heroVid.addEventListener('webkitbeginfullscreen', () => {
       updateFsIcon(true);
       wrapper.classList.add('is-fullscreen');
-      // フルスクリーン移行中フラグをセット
-      state._fullscreenTransition = true;
-      setTimeout(() => { state._fullscreenTransition = false; }, 500);
     });
     heroVid.addEventListener('webkitendfullscreen', () => {
       updateFsIcon(false);
       wrapper.classList.remove('is-fullscreen');
-      
-      // iOSは「完了」ボタンでフルスクリーンを抜ける際に自動的にpauseを発火させることがある
-      // 500ms以内にpauseが呼ばれていた場合は「ユーザーの意図した停止ではない」とみなして再生を再開する
-      const pausedRecently = (Date.now() - lastPauseTime < 500);
-      const shouldResume = state.isPlaying || pausedRecently;
-
-      if (shouldResume && heroVid.paused && state.currentTrackId) {
-        state.isPlaying = true; // pauseイベントでfalseにされた状態を戻す
-        updatePlayIcon(true);
+      // 映像が止まっていたら再開（音声はaudioPlayerで独立しているので影響なし）
+      if (state.isPlaying && heroVid.paused && state.currentTrackId) {
         heroVid.play().catch(() => {});
       }
-      
-      state._fullscreenTransition = true;
-      setTimeout(() => {
-        state._fullscreenTransition = false;
-        if (shouldResume && heroVid.paused && state.currentTrackId) {
-          heroVid.play().catch(() => {});
-        }
-      }, 100);
     });
   }
 
@@ -1509,27 +1520,12 @@ function initHeroFullscreen() {
       updateFsIcon(isFs);
       if (isFs) {
         wrapper.classList.add('is-fullscreen');
-        state._fullscreenTransition = true;
-        setTimeout(() => { state._fullscreenTransition = false; }, 500);
       } else {
         wrapper.classList.remove('is-fullscreen');
-        
-        const pausedRecently = (Date.now() - lastPauseTime < 500);
-        const shouldResume = state.isPlaying || pausedRecently;
-
-        if (shouldResume && heroVid.paused && state.currentTrackId) {
-          state.isPlaying = true;
-          updatePlayIcon(true);
+        // 映像が止まっていたら再開
+        if (state.isPlaying && heroVid.paused && state.currentTrackId) {
           heroVid.play().catch(() => {});
         }
-        
-        state._fullscreenTransition = true;
-        setTimeout(() => {
-          state._fullscreenTransition = false;
-          if (shouldResume && heroVid.paused && state.currentTrackId) {
-            heroVid.play().catch(() => {});
-          }
-        }, 100);
       }
     });
   });
