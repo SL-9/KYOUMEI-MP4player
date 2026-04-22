@@ -251,8 +251,18 @@ function createAddCard() {
     input.type = 'file';
     input.accept = 'video/mp4,video/*';
     input.multiple = true;
-    input.addEventListener('change', () => processFiles(input.files));
-    input.click();
+    // iOSでfile inputがGCされないようbodyに追加してから削除
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      processFiles(input.files);
+      // 少し遅延させてからDOMを削除（iOSで安全に）
+      setTimeout(() => {
+        if (input.parentNode) input.parentNode.removeChild(input);
+      }, 1000);
+    });
+    // タップイベント後すぐにクリックを発火
+    requestAnimationFrame(() => input.click());
   }
 
   card.addEventListener('click',  triggerFilePicker);
@@ -416,8 +426,10 @@ function createTrackCard(track, num) {
 
   function openDropdown(e) {
     e.stopPropagation();
-    // Close all other dropdowns first
-    document.querySelectorAll('.card-dropdown.open').forEach(d => d.classList.remove('open'));
+    // 他のドロップダウンを先に閉じる
+    document.querySelectorAll('.card-dropdown.open').forEach(d => {
+      d.classList.remove('open');
+    });
     dropdownOpen = true;
     dropdown.classList.add('open');
   }
@@ -437,6 +449,7 @@ function createTrackCard(track, num) {
       closeDropdown();
     }
   });
+
 
   // ── Dropdown action items ───────────────────────
   dropdown.querySelectorAll('.card-dropdown-item').forEach(item => {
@@ -534,6 +547,9 @@ function triggerUpload(trackId, overlayEl, cardVideoEl) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'video/mp4,video/*';
+  // iOSでGCされないようbodyに追加
+  input.style.display = 'none';
+  document.body.appendChild(input);
 
   input.addEventListener('change', () => {
     const file = input.files[0];
@@ -588,7 +604,10 @@ function triggerUpload(trackId, overlayEl, cardVideoEl) {
     }, 80);
   });
 
-  input.click();
+  requestAnimationFrame(() => input.click());
+  setTimeout(() => {
+    if (input.parentNode) input.parentNode.removeChild(input);
+  }, 60000);
 }
 
 // ── Toast Notification ────────────────────────────────────────────────────────
@@ -1244,6 +1263,9 @@ async function initApp() {
   });
 
   vid.addEventListener('pause', () => {
+    // フルスクリーン操作中のpauseイベントは無視する
+    // （iOS/Androidでフルスクリーン解除時に一時的にpauseが発火するため）
+    if (state._fullscreenTransition) return;
     state.isPlaying = false;
     updatePlayIcon(false);
     els.miniViz.classList.remove('active');
@@ -1437,10 +1459,22 @@ function initHeroFullscreen() {
     heroVid.addEventListener('webkitbeginfullscreen', () => {
       updateFsIcon(true);
       wrapper.classList.add('is-fullscreen');
+      // フルスクリーン移行中フラグをセット
+      state._fullscreenTransition = true;
     });
     heroVid.addEventListener('webkitendfullscreen', () => {
       updateFsIcon(false);
       wrapper.classList.remove('is-fullscreen');
+      // フルスクリーン解除後に再生を継続する
+      // （iOSはフルスクリーン解除時にvideoをpauseすることがある）
+      const wasPlaying = state.isPlaying;
+      state._fullscreenTransition = true;
+      setTimeout(() => {
+        state._fullscreenTransition = false;
+        if (wasPlaying && heroVid.paused && state.currentTrackId) {
+          heroVid.play().catch(() => {});
+        }
+      }, 300);
     });
   }
 
@@ -1457,8 +1491,18 @@ function initHeroFullscreen() {
       updateFsIcon(isFs);
       if (isFs) {
         wrapper.classList.add('is-fullscreen');
+        state._fullscreenTransition = true;
       } else {
         wrapper.classList.remove('is-fullscreen');
+        // フルスクリーン解除後に再生を継続する
+        const wasPlaying = state.isPlaying;
+        state._fullscreenTransition = true;
+        setTimeout(() => {
+          state._fullscreenTransition = false;
+          if (wasPlaying && heroVid.paused && state.currentTrackId) {
+            heroVid.play().catch(() => {});
+          }
+        }, 300);
       }
     });
   });
