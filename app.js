@@ -1262,10 +1262,18 @@ async function initApp() {
     els.miniViz.classList.add('active');
   });
 
+  let lastPauseTime = 0;
+  
   vid.addEventListener('pause', () => {
-    // フルスクリーン操作中のpauseイベントは無視する
-    // （iOS/Androidでフルスクリーン解除時に一時的にpauseが発火するため）
-    if (state._fullscreenTransition) return;
+    lastPauseTime = Date.now();
+    
+    // フルスクリーン操作中フラグがある場合は即時再開（以前のロジックの名残・保険）
+    if (state._fullscreenTransition) {
+      if (state.isPlaying && state.currentTrackId) {
+        vid.play().catch(() => {});
+      }
+      return;
+    }
     state.isPlaying = false;
     updatePlayIcon(false);
     els.miniViz.classList.remove('active');
@@ -1461,20 +1469,30 @@ function initHeroFullscreen() {
       wrapper.classList.add('is-fullscreen');
       // フルスクリーン移行中フラグをセット
       state._fullscreenTransition = true;
+      setTimeout(() => { state._fullscreenTransition = false; }, 500);
     });
     heroVid.addEventListener('webkitendfullscreen', () => {
       updateFsIcon(false);
       wrapper.classList.remove('is-fullscreen');
-      // フルスクリーン解除後に再生を継続する
-      // （iOSはフルスクリーン解除時にvideoをpauseすることがある）
-      const wasPlaying = state.isPlaying;
+      
+      // iOSは「完了」ボタンでフルスクリーンを抜ける際に自動的にpauseを発火させることがある
+      // 500ms以内にpauseが呼ばれていた場合は「ユーザーの意図した停止ではない」とみなして再生を再開する
+      const pausedRecently = (Date.now() - lastPauseTime < 500);
+      const shouldResume = state.isPlaying || pausedRecently;
+
+      if (shouldResume && heroVid.paused && state.currentTrackId) {
+        state.isPlaying = true; // pauseイベントでfalseにされた状態を戻す
+        updatePlayIcon(true);
+        heroVid.play().catch(() => {});
+      }
+      
       state._fullscreenTransition = true;
       setTimeout(() => {
         state._fullscreenTransition = false;
-        if (wasPlaying && heroVid.paused && state.currentTrackId) {
+        if (shouldResume && heroVid.paused && state.currentTrackId) {
           heroVid.play().catch(() => {});
         }
-      }, 300);
+      }, 100);
     });
   }
 
@@ -1492,17 +1510,26 @@ function initHeroFullscreen() {
       if (isFs) {
         wrapper.classList.add('is-fullscreen');
         state._fullscreenTransition = true;
+        setTimeout(() => { state._fullscreenTransition = false; }, 500);
       } else {
         wrapper.classList.remove('is-fullscreen');
-        // フルスクリーン解除後に再生を継続する
-        const wasPlaying = state.isPlaying;
+        
+        const pausedRecently = (Date.now() - lastPauseTime < 500);
+        const shouldResume = state.isPlaying || pausedRecently;
+
+        if (shouldResume && heroVid.paused && state.currentTrackId) {
+          state.isPlaying = true;
+          updatePlayIcon(true);
+          heroVid.play().catch(() => {});
+        }
+        
         state._fullscreenTransition = true;
         setTimeout(() => {
           state._fullscreenTransition = false;
-          if (wasPlaying && heroVid.paused && state.currentTrackId) {
+          if (shouldResume && heroVid.paused && state.currentTrackId) {
             heroVid.play().catch(() => {});
           }
-        }, 300);
+        }, 100);
       }
     });
   });
