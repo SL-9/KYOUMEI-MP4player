@@ -32,6 +32,7 @@ const state = {
   activeGenre: 'all',
   isDragging: false,
   waveformPhase: 0,
+  editingPlaylistId: null,
 };
 
 // ── IndexedDB & LocalStorage ──────────────────────────────────────────────────
@@ -128,6 +129,11 @@ const els = {
   muteBtn:         $('muteBtn'),
   heartBtn:        $('heartBtn'),
   volumeSlider:    $('volumeSlider'),
+  volumeVerticalSlider: $('volumeVerticalSlider'),
+  volumeVerticalFill:   $('volumeVerticalFill'),
+  volumeVerticalPopup:  $('volumeVerticalPopup'),
+  volumePopupWrap:      $('volumePopupWrap'),
+  volumePopupLabel:     $('volumePopupLabel'),
   progressTrack:   $('progressTrack'),
   progressFill:    $('progressFill'),
   progressThumb:   $('progressThumb'),
@@ -141,6 +147,7 @@ const els = {
   heroPlayBtn:     $('heroPlayBtn'),
   heroVideo:       $('heroVideo'),
   heroVisual:      $('heroVisual'),
+  heroSection:     $('heroSection'),
   trackCount:      $('trackCount'),
   genreTags:       $('genreTags'),
   bgLayer:         $('bgLayer'),
@@ -367,6 +374,16 @@ function createTrackCard(track, num) {
           </svg>
           MP4をアップロード
         </button>
+        <button class="card-dropdown-item playlist-add" data-action="add-to-playlist" role="menuitem">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+            <circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/>
+            <line x1="18" y1="14" x2="18" y2="20"/><line x1="15" y1="17" x2="21" y2="17"/>
+          </svg>
+          プレイリストへ追加
+        </button>
         <div class="card-dropdown-divider"></div>
         <button class="card-dropdown-item danger" data-action="delete" role="menuitem">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -461,6 +478,8 @@ function createTrackCard(track, num) {
         deleteTrack(track.id);
       } else if (action === 'upload') {
         triggerUpload(track.id, uploadOverlay, vid);
+      } else if (action === 'add-to-playlist') {
+        openAddToPlaylistModal(track.id);
       }
     });
   });
@@ -730,12 +749,17 @@ function updateCardPlayState() {
     const isCurrent = id === state.currentTrackId;
     card.classList.toggle('playing', isCurrent);
 
+    const vid = card.querySelector('video');
     const playBtn = card.querySelector('.track-card-play-btn');
-    if (playBtn) {
-      if (isCurrent && state.isPlaying) {
-        playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
-      } else {
-        playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>`;
+    
+    if (isCurrent && state.isPlaying) {
+      if (playBtn) playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+      if (vid) vid.play().catch(() => {});
+    } else {
+      if (playBtn) playBtn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>`;
+      if (vid) {
+        vid.pause();
+        if (!isCurrent) vid.currentTime = 0;
       }
     }
 
@@ -782,8 +806,17 @@ function playNext() {
   }
 
   const idx = filtered.findIndex(t => t.id === state.currentTrackId);
-  const nextIdx = (idx + 1) % filtered.length;
-  playTrack(filtered[nextIdx].id);
+
+  // 末尾に達したら停止（ラップアラウンドしない）
+  if (idx < 0 || idx >= filtered.length - 1) {
+    state.isPlaying = false;
+    updatePlayIcon(false);
+    els.miniViz.classList.remove('active');
+    updateCardPlayState();
+    return;
+  }
+
+  playTrack(filtered[idx + 1].id);
 }
 
 function playPrev() {
@@ -840,29 +873,120 @@ function updateVolume(val) {
   els.heroVideo.volume = state.volume;
   els.volumeSlider.value = val;
 
-  // Volume slider gradient
+  // 横スライダーグラデーション
   const pct = val;
   els.volumeSlider.style.background = `linear-gradient(to right, #8b5cf6 ${pct}%, rgba(255,255,255,0.12) ${pct}%)`;
+
+  // 縦スライダー同期
+  if (els.volumeVerticalSlider) els.volumeVerticalSlider.value = val;
+  if (els.volumeVerticalFill)   els.volumeVerticalFill.style.height = pct + '%';
+  if (els.volumePopupLabel)     els.volumePopupLabel.textContent = Math.round(val) + '%';
 
   saveStateToLocal();
 }
 
-function toggleMute() {
+// ミュート状態を実際に適用してUIを更新する共通関数
+function applyMuteToggle() {
   state.isMuted = !state.isMuted;
   els.heroVideo.muted = state.isMuted;
 
+  // メインミュートボタンのアイコン
   const iconVol  = els.muteBtn.querySelector('.icon-vol');
   const iconMute = els.muteBtn.querySelector('.icon-mute');
 
+  // ポップアップ内ミュートボタンのアイコン
+  const popupMuteBtn = document.getElementById('volumePopupMuteBtn');
+  const pIconVol  = popupMuteBtn ? popupMuteBtn.querySelector('.icon-vol')  : null;
+  const pIconMute = popupMuteBtn ? popupMuteBtn.querySelector('.icon-mute') : null;
+
   if (state.isMuted) {
-    iconVol.style.display = 'none';
-    iconMute.style.display = 'block';
+    if (iconVol)   iconVol.style.display  = 'none';
+    if (iconMute)  iconMute.style.display = 'block';
     els.muteBtn.style.color = 'var(--accent-pink)';
+    if (pIconVol)  pIconVol.style.display  = 'none';
+    if (pIconMute) pIconMute.style.display = 'block';
+    if (popupMuteBtn) popupMuteBtn.classList.add('muted');
   } else {
-    iconVol.style.display = 'block';
-    iconMute.style.display = 'none';
+    if (iconVol)   iconVol.style.display  = 'block';
+    if (iconMute)  iconMute.style.display = 'none';
     els.muteBtn.style.color = '';
+    if (pIconVol)  pIconVol.style.display  = 'block';
+    if (pIconMute) pIconMute.style.display = 'none';
+    if (popupMuteBtn) popupMuteBtn.classList.remove('muted');
   }
+}
+
+function toggleMute() {
+  // 縦バーポップアップが開いている場合は閉じる
+  if (els.volumeVerticalPopup && els.volumeVerticalPopup.classList.contains('open')) {
+    els.volumeVerticalPopup.classList.remove('open');
+    return;
+  }
+
+  // 縦バーポップアップが表示モード（画面幅<=860px）の場合はポップアップを開く
+  if (window.innerWidth <= 860 && els.volumeVerticalPopup) {
+    // position: fixed なので muteBtn の位置から座標を計算
+    const rect = els.muteBtn.getBoundingClientRect();
+    const popup = els.volumeVerticalPopup;
+    // ポップアップ幅(約52px)を中央揃えになるよう left を設定
+    const popupW = 52;
+    let left = rect.left + rect.width / 2 - popupW / 2;
+    // 画面端のはみ出しを防止
+    left = Math.max(8, Math.min(left, window.innerWidth - popupW - 8));
+    // ボタン上部の12px上にポップアップが来るよう bottom を設定
+    const bottom = window.innerHeight - rect.top + 12;
+    popup.style.left   = left + 'px';
+    popup.style.bottom = bottom + 'px';
+    popup.style.top    = '';
+    popup.classList.add('open');
+    return;
+  }
+
+  // 広い画面ではミュートトグル
+  applyMuteToggle();
+}
+
+// 縦バーポップアップの初期化
+function initVolumePopup() {
+  const popup     = els.volumeVerticalPopup;
+  const wrap      = els.volumePopupWrap;
+  const slider    = els.volumeVerticalSlider;
+  const muteInner = document.getElementById('volumePopupMuteBtn');
+  if (!popup || !slider) return;
+
+  // 縦スライダーの入力で音量変更
+  slider.addEventListener('input', e => {
+    updateVolume(parseInt(e.target.value));
+  });
+
+  // ポップアップ内ミュートボタン
+  if (muteInner) {
+    muteInner.addEventListener('click', e => {
+      e.stopPropagation();
+      applyMuteToggle();
+    });
+  }
+
+  // ポップアップ外クリックで閉じる
+  // ポップアップはbody直下に移動済みのため、muteBtn と popup 自身のどちらも
+  // 含まないクリックを「外クリック」と判断する
+  document.addEventListener('click', e => {
+    const inMuteBtn = wrap ? wrap.contains(e.target) : (els.muteBtn && els.muteBtn.contains(e.target));
+    const inPopup   = popup.contains(e.target);
+    if (!inMuteBtn && !inPopup) {
+      popup.classList.remove('open');
+    }
+  });
+
+  // タッチイベント：スライダーのタッチ操作をサポート
+  slider.addEventListener('touchmove', e => {
+    const touch = e.touches[0];
+    const rect  = slider.getBoundingClientRect();
+    // 縦方向：上が100%, 下が0%
+    const ratio = 1 - Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+    updateVolume(Math.round(ratio * 100));
+    e.stopPropagation();
+  }, { passive: true });
 }
 
 // ── Accent Color ──────────────────────────────────────────────────────────────
@@ -1232,6 +1356,7 @@ async function initApp() {
 
   // Volume
   els.volumeSlider.addEventListener('input', e => updateVolume(parseInt(e.target.value)));
+  initVolumePopup();
 
   // Reset button
   if (els.resetBtn) {
@@ -1287,6 +1412,8 @@ async function initApp() {
   initPageDrop();
   initAspectSwitcher();
   initHeroFullscreen();
+  initPlaylistFeature();
+  initMobileNav();
 
 
 
@@ -1294,6 +1421,38 @@ async function initApp() {
   updateVolume(Math.round(state.volume * 100));
 
   console.log('🎵 VIBE Player ready — %c press Space to play', 'color: #8b5cf6; font-weight: bold');
+}
+
+// ── Mobile Nav ──────────────────────────────────────────────────────────────
+function initMobileNav() {
+  const hamburger = document.getElementById('hamburgerMenu');
+  const closeBtn  = document.getElementById('mobileNavClose');
+  const overlay   = document.getElementById('mobileNavOverlay');
+  const collLink  = document.getElementById('mobileNavCollection');
+  const libLink   = document.getElementById('mobileNavLibrary');
+
+  if (!hamburger || !overlay) return;
+
+  const toggle = (open) => {
+    overlay.classList.toggle('open', open);
+    document.body.style.overflow = open ? 'hidden' : '';
+  };
+
+  hamburger.addEventListener('click', () => toggle(true));
+  closeBtn.addEventListener('click', () => toggle(false));
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) toggle(false);
+  });
+
+  collLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchView('collection');
+  });
+
+  libLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchView('library');
+  });
 }
 
 // Start
@@ -1586,3 +1745,678 @@ function initPageDrop() {
     showToast(`${videoFiles.length}件のトラックを追加しました`, 'success');
   });
 }
+
+// ======================================================
+//  PLAYLIST FEATURE
+// ======================================================
+
+// ── Data ─────────────────────────────────────────────
+let PLAYLISTS = [];
+
+function savePlaylists() {
+  try {
+    localStorage.setItem('vibe_playlists', JSON.stringify(PLAYLISTS));
+  } catch (e) {
+    console.warn('Failed to save playlists', e);
+  }
+}
+
+function loadPlaylists() {
+  try {
+    const raw = localStorage.getItem('vibe_playlists');
+    if (raw) PLAYLISTS = JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load playlists', e);
+    PLAYLISTS = [];
+  }
+}
+
+function createPlaylist(name, description, color) {
+  const pl = {
+    id: Date.now() + Math.floor(Math.random() * 999),
+    name: name.trim(),
+    description: description.trim(),
+    color: color || '#8b5cf6',
+    trackIds: [],
+    createdAt: new Date().toISOString(),
+  };
+  PLAYLISTS.push(pl);
+  savePlaylists();
+  return pl;
+}
+
+function updatePlaylist(id, name, description, color) {
+  const pl = PLAYLISTS.find(p => p.id === id);
+  if (!pl) return;
+  pl.name = name.trim();
+  pl.description = description.trim();
+  pl.color = color;
+  savePlaylists();
+}
+
+function deletePlaylist(id) {
+  PLAYLISTS = PLAYLISTS.filter(p => p.id !== id);
+  savePlaylists();
+}
+
+function addTrackToPlaylist(playlistId, trackId) {
+  const pl = PLAYLISTS.find(p => p.id === playlistId);
+  if (!pl) return false;
+  if (pl.trackIds.includes(trackId)) return false;
+  pl.trackIds.push(trackId);
+  savePlaylists();
+  return true;
+}
+
+function removeTrackFromPlaylist(playlistId, trackId) {
+  const pl = PLAYLISTS.find(p => p.id === playlistId);
+  if (!pl) return;
+  pl.trackIds = pl.trackIds.filter(id => id !== trackId);
+  savePlaylists();
+}
+
+// ── View State ────────────────────────────────────────
+// state.view: 'collection' | 'library' | 'playlist'
+// state.activePlaylistId: number | null
+state.view = 'collection';
+state.activePlaylistId = null;
+
+function switchView(view, playlistId) {
+  state.view = view;
+  state.activePlaylistId = playlistId || null;
+
+  const heroSection      = document.getElementById('heroSection');
+  const mainContent      = document.getElementById('mainContent');
+  const libraryView      = document.getElementById('libraryView');
+  const playlistDetailView = document.getElementById('playlistDetailView');
+  const navCollection    = document.getElementById('navCollection');
+  const navLibrary       = document.getElementById('navLibrary');
+
+  // Hide all
+  mainContent.style.display      = 'none';
+  libraryView.style.display      = 'none';
+  playlistDetailView.style.display = 'none';
+
+  // Hero section is visible for all views as requested ("Library also needs a main screen")
+  if (heroSection) heroSection.style.display = '';
+
+  // Nav active state
+  navCollection.classList.toggle('active', view === 'collection');
+  navLibrary.classList.toggle('active', view === 'library' || view === 'playlist');
+
+  // Mobile Nav active state & Auto close
+  const mobColl = document.getElementById('mobileNavCollection');
+  const mobLib  = document.getElementById('mobileNavLibrary');
+  const mobOverlay = document.getElementById('mobileNavOverlay');
+
+  if (mobColl) mobColl.classList.toggle('active', view === 'collection');
+  if (mobLib)  mobLib.classList.toggle('active', view === 'library' || view === 'playlist');
+  if (mobOverlay) {
+    mobOverlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  if (view === 'collection') {
+    mainContent.style.display = '';
+    renderGallery(getFilteredTracks());
+  } else if (view === 'library') {
+    libraryView.style.display = '';
+    renderLibraryView();
+  } else if (view === 'playlist') {
+    playlistDetailView.style.display = '';
+    renderPlaylistDetail(playlistId);
+  }
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Playlist Cover Helper ─────────────────────────────
+function buildCoverHtml(trackIds, size) {
+  // get up to 4 valid tracks
+  const tracks = trackIds
+    .map(id => TRACKS.find(t => t.id === id))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  if (tracks.length === 0) {
+    return `<div class="cover-placeholder" style="position:absolute;inset:0;"></div>`;
+  }
+
+  if (tracks.length === 1) {
+    const t = tracks[0];
+    return `
+      <div class="playlist-card-cover-single">
+        <video data-src="${t.video_url}" muted loop playsinline webkit-playsinline preload="none"></video>
+      </div>`;
+  }
+
+  // 2-4 tracks: grid
+  const cells = tracks.map(t =>
+    `<video data-src="${t.video_url}" muted loop playsinline webkit-playsinline preload="none"></video>`
+  );
+  while (cells.length < 4) cells.push('<div class="cover-placeholder"></div>');
+  return `<div class="playlist-card-cover-grid">${cells.join('')}</div>`;
+}
+
+function lazyLoadVideos(container) {
+  const videos = container.querySelectorAll('video[data-src]');
+  const obs = new IntersectionObserver((entries, o) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const v = entry.target;
+        if (!v.src && v.dataset.src) {
+          v.src = v.dataset.src;
+          v.load();
+        }
+        o.unobserve(v);
+      }
+    });
+  }, { rootMargin: '150px' });
+  videos.forEach(v => obs.observe(v));
+}
+
+// ── Library View ──────────────────────────────────────
+function renderLibraryView() {
+  const grid = document.getElementById('playlistGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  if (PLAYLISTS.length === 0) {
+    grid.innerHTML = `
+      <div class="playlist-empty">
+        <div class="playlist-empty-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+            <line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+        </div>
+        <p class="playlist-empty-title">プレイリストがありません</p>
+        <p class="playlist-empty-sub">「新しいプレイリスト」ボタンからプレイリストを作成し、<br>お気に入りのトラックを整理しましょう</p>
+      </div>`;
+    return;
+  }
+
+  PLAYLISTS.forEach((pl, idx) => {
+    const card = document.createElement('div');
+    card.className = 'playlist-card';
+    card.dataset.id = pl.id;
+    card.style.animationDelay = `${idx * 0.05}s`;
+
+    const coverHtml = buildCoverHtml(pl.trackIds, 'card');
+    const count = pl.trackIds.length;
+
+    card.innerHTML = `
+      <div class="playlist-card-cover">
+        ${coverHtml}
+        <div class="playlist-card-cover-overlay"></div>
+        <div class="playlist-card-color-bar" style="background:${pl.color}"></div>
+        <div class="playlist-card-play-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>
+        </div>
+      </div>
+      <div class="playlist-card-info">
+        <div class="playlist-card-name">${escapeHtml(pl.name)}</div>
+        <div class="playlist-card-count">
+          <span class="playlist-card-dot" style="background:${pl.color}"></span>
+          ${count} トラック
+        </div>
+      </div>`;
+
+    // Play button: play first track
+    card.querySelector('.playlist-card-play-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      playPlaylist(pl.id);
+    });
+
+    // Card click → detail
+    card.addEventListener('click', () => switchView('playlist', pl.id));
+
+    grid.appendChild(card);
+  });
+
+  lazyLoadVideos(grid);
+}
+
+// ── Playlist Detail ───────────────────────────────────
+function renderPlaylistDetail(playlistId) {
+  const pl = PLAYLISTS.find(p => p.id === playlistId);
+  const nameEl  = document.getElementById('playlistDetailName');
+  const descEl  = document.getElementById('playlistDetailDesc');
+  const countEl = document.getElementById('playlistDetailCount');
+  const coverEl = document.getElementById('playlistDetailCover');
+  const listEl  = document.getElementById('playlistTrackList');
+
+  if (!pl) { switchView('library'); return; }
+
+  // Meta
+  nameEl.textContent  = pl.name;
+  descEl.textContent  = pl.description || '';
+  descEl.style.display = pl.description ? '' : 'none';
+  const cnt = pl.trackIds.length;
+  countEl.textContent = `${cnt} トラック`;
+
+  // Cover
+  coverEl.innerHTML = '';
+  const tracks4 = pl.trackIds.map(id => TRACKS.find(t => t.id === id)).filter(Boolean).slice(0, 4);
+  if (tracks4.length === 0) {
+    coverEl.innerHTML = `<div style="width:100%;height:100%;background:var(--bg-elevated);"></div>`;
+  } else if (tracks4.length === 1) {
+    coverEl.innerHTML = `<video data-src="${tracks4[0].video_url}" muted loop playsinline webkit-playsinline preload="none" style="width:100%;height:100%;object-fit:cover;display:block;"></video>`;
+  } else {
+    const cells = tracks4.map(t =>
+      `<video data-src="${t.video_url}" muted loop playsinline webkit-playsinline preload="none"></video>`
+    );
+    while (cells.length < 4) cells.push('<div class="cover-placeholder"></div>');
+    coverEl.innerHTML = `<div class="playlist-detail-cover-grid">${cells.join('')}</div>`;
+  }
+  coverEl.style.borderColor = pl.color;
+  coverEl.style.boxShadow = `0 8px 40px rgba(0,0,0,0.5), 0 0 30px ${pl.color}40`;
+  lazyLoadVideos(coverEl);
+
+  // Track list
+  listEl.innerHTML = '';
+  if (pl.trackIds.length === 0) {
+    listEl.innerHTML = `
+      <div class="playlist-tracks-empty">
+        <p>トラックがありません</p>
+        <p>コレクションのトラックカードメニュー (⋯) から<br>「プレイリストへ追加」でトラックを追加できます</p>
+      </div>`;
+  } else {
+    pl.trackIds.forEach((trackId, idx) => {
+      const track = TRACKS.find(t => t.id === trackId);
+      if (!track) return;
+
+      const isCurrent = state.currentTrackId === track.id;
+      const row = document.createElement('div');
+      row.className = `playlist-track-row${isCurrent ? ' playing' : ''}`;
+      row.dataset.trackId = track.id;
+
+      row.innerHTML = `
+        <span class="playlist-track-num">${idx + 1}</span>
+        <span class="playlist-track-play-icon">
+          ${isCurrent && state.isPlaying
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>`}
+        </span>
+        <div class="playlist-track-thumb">
+          <video data-src="${track.video_url}" muted loop playsinline webkit-playsinline preload="none"></video>
+        </div>
+        <div class="playlist-track-meta">
+          <div class="playlist-track-title">${escapeHtml(track.title)}</div>
+          <div class="playlist-track-artist">${escapeHtml(track.artist)}</div>
+        </div>
+        <span class="playlist-track-genre-badge">${track.genre}</span>
+        <span class="playlist-track-duration">${track.duration}</span>
+        <button class="playlist-track-remove" title="リストから削除" aria-label="リストから削除">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>`;
+
+      // Play on row click
+      row.addEventListener('click', e => {
+        if (e.target.closest('.playlist-track-remove')) return;
+        playTrack(track.id);
+        updatePlaylistDetailPlayState(pl.id);
+      });
+
+      // Remove from playlist
+      row.querySelector('.playlist-track-remove').addEventListener('click', e => {
+        e.stopPropagation();
+        removeTrackFromPlaylist(pl.id, track.id);
+        renderPlaylistDetail(pl.id);
+        showToast('プレイリストから削除しました', 'success');
+      });
+
+      listEl.appendChild(row);
+    });
+
+    lazyLoadVideos(listEl);
+  }
+}
+
+function updatePlaylistDetailPlayState(playlistId) {
+  if (state.view !== 'playlist') return;
+  document.querySelectorAll('.playlist-track-row').forEach(row => {
+    const id = parseInt(row.dataset.trackId);
+    const isCurrent = id === state.currentTrackId;
+    row.classList.toggle('playing', isCurrent);
+    
+    const vid = row.querySelector('video');
+    const icon = row.querySelector('.playlist-track-play-icon');
+    
+    if (isCurrent && state.isPlaying) {
+      if (icon) icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+      if (vid) vid.play().catch(() => {});
+    } else {
+      if (icon) icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>`;
+      if (vid) {
+        vid.pause();
+        // Keep current time if it's the current track but paused, or reset if not current
+        if (!isCurrent) vid.currentTime = 0;
+      }
+    }
+  });
+}
+
+function playPlaylist(playlistId) {
+  const pl = PLAYLISTS.find(p => p.id === playlistId);
+  if (!pl || pl.trackIds.length === 0) {
+    showToast('プレイリストにトラックがありません', 'error');
+    return;
+  }
+  const firstTrack = TRACKS.find(t => t.id === pl.trackIds[0]);
+  if (firstTrack) playTrack(firstTrack.id);
+}
+
+// ── Create Playlist Modal ─────────────────────────────
+let selectedColor = '#8b5cf6';
+
+function openCreatePlaylistModal(editId = null) {
+  state.editingPlaylistId = editId;
+  const backdrop = document.getElementById('playlistModalBackdrop');
+  const modalTitle = document.querySelector('.playlist-modal-title');
+  const nameInput = document.getElementById('playlistNameInput');
+  const descInput = document.getElementById('playlistDescInput');
+  const createModalBtn = document.getElementById('playlistModalCreate');
+  
+  if (!backdrop) return;
+
+  if (editId) {
+    const pl = PLAYLISTS.find(p => p.id === editId);
+    if (!pl) return;
+    modalTitle.textContent = 'プレイリストを編集';
+    createModalBtn.textContent = '保存する';
+    nameInput.value = pl.name;
+    descInput.value = pl.description || '';
+    selectedColor = pl.color;
+  } else {
+    modalTitle.textContent = '新しいプレイリスト';
+    createModalBtn.textContent = '作成する';
+    nameInput.value = '';
+    descInput.value = '';
+    selectedColor = '#8b5cf6';
+  }
+
+  // Update color swatches
+  document.querySelectorAll('#playlistColorPicker .color-swatch').forEach(s => {
+    const isActive = s.dataset.color === selectedColor;
+    s.classList.toggle('active', isActive);
+    s.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  backdrop.style.display = 'flex';
+  requestAnimationFrame(() => nameInput.focus());
+}
+
+function closeCreatePlaylistModal() {
+  const backdrop = document.getElementById('playlistModalBackdrop');
+  if (backdrop) backdrop.style.display = 'none';
+}
+
+// ── Add-to-Playlist Modal ─────────────────────────────
+let pendingAddTrackId = null;
+
+function openAddToPlaylistModal(trackId) {
+  pendingAddTrackId = trackId;
+  const backdrop = document.getElementById('addToPlaylistModalBackdrop');
+  const list = document.getElementById('addToPlaylistList');
+  if (!backdrop || !list) return;
+
+  list.innerHTML = '';
+
+  if (PLAYLISTS.length === 0) {
+    list.innerHTML = `<div class="add-playlist-no-playlists">プレイリストがまだありません。<br>まず「Library」タブからプレイリストを作成してください。</div>`;
+  } else {
+    PLAYLISTS.forEach(pl => {
+      const alreadyAdded = pl.trackIds.includes(trackId);
+      const firstTrack = pl.trackIds.map(id => TRACKS.find(t => t.id === id)).find(Boolean);
+
+      const item = document.createElement('div');
+      item.className = `add-playlist-item${alreadyAdded ? ' already-added' : ''}`;
+
+      item.innerHTML = `
+        <div class="add-playlist-item-cover">
+          ${firstTrack
+            ? `<video data-src="${firstTrack.video_url}" muted loop playsinline webkit-playsinline preload="none"></video>`
+            : `<div style="width:100%;height:100%;background:var(--bg-elevated);"></div>`}
+        </div>
+        <span class="add-playlist-item-dot" style="background:${pl.color}"></span>
+        <span class="add-playlist-item-name">${escapeHtml(pl.name)}</span>
+        <span class="add-playlist-item-count">${pl.trackIds.length} tracks${alreadyAdded ? ' · 追加済' : ''}</span>`;
+
+      if (!alreadyAdded) {
+        item.addEventListener('click', () => {
+          addTrackToPlaylist(pl.id, trackId);
+          closeAddToPlaylistModal();
+          showToast(`「${pl.name}」に追加しました`, 'success');
+        });
+      }
+
+      list.appendChild(item);
+    });
+    lazyLoadVideos(list);
+  }
+
+  backdrop.style.display = 'flex';
+}
+
+function closeAddToPlaylistModal() {
+  const backdrop = document.getElementById('addToPlaylistModalBackdrop');
+  if (backdrop) backdrop.style.display = 'none';
+  pendingAddTrackId = null;
+}
+
+// ── Init Playlist Feature ─────────────────────────────
+function initPlaylistFeature() {
+  loadPlaylists();
+
+  // Nav links
+  const navCollection = document.getElementById('navCollection');
+  const navLibrary    = document.getElementById('navLibrary');
+
+  navCollection.addEventListener('click', e => {
+    e.preventDefault();
+    switchView('collection');
+  });
+
+  navLibrary.addEventListener('click', e => {
+    e.preventDefault();
+    switchView('library');
+  });
+
+  // Back button
+  const backBtn = document.getElementById('backToLibraryBtn');
+  if (backBtn) backBtn.addEventListener('click', () => switchView('library'));
+
+  // Create playlist button
+  const createBtn = document.getElementById('createPlaylistBtn');
+  if (createBtn) createBtn.addEventListener('click', () => openCreatePlaylistModal());
+
+  // Modal: close buttons
+  const modalClose = document.getElementById('playlistModalClose');
+  const modalCancel = document.getElementById('playlistModalCancel');
+  if (modalClose)  modalClose.addEventListener('click', closeCreatePlaylistModal);
+  if (modalCancel) modalCancel.addEventListener('click', closeCreatePlaylistModal);
+
+  // Modal backdrop click
+  const backdrop = document.getElementById('playlistModalBackdrop');
+  if (backdrop) {
+    backdrop.addEventListener('click', e => {
+      if (e.target === backdrop) closeCreatePlaylistModal();
+    });
+  }
+
+  // Color picker
+  const colorPicker = document.getElementById('playlistColorPicker');
+  if (colorPicker) {
+    colorPicker.addEventListener('click', e => {
+      const swatch = e.target.closest('.color-swatch');
+      if (!swatch) return;
+      selectedColor = swatch.dataset.color;
+      colorPicker.querySelectorAll('.color-swatch').forEach(s => {
+        s.classList.toggle('active', s === swatch);
+        s.setAttribute('aria-pressed', s === swatch ? 'true' : 'false');
+      });
+    });
+  }
+
+  // Create button
+  const createModalBtn = document.getElementById('playlistModalCreate');
+  if (createModalBtn) {
+    createModalBtn.addEventListener('click', () => {
+      const name = document.getElementById('playlistNameInput').value.trim();
+      if (!name) {
+        document.getElementById('playlistNameInput').focus();
+        showToast('プレイリスト名を入力してください', 'error');
+        return;
+      }
+      const desc = document.getElementById('playlistDescInput').value;
+      
+      if (state.editingPlaylistId) {
+        updatePlaylist(state.editingPlaylistId, name, desc, selectedColor);
+        showToast(`「${name}」を更新しました`, 'success');
+        // Refresh view
+        if (state.view === 'playlist') renderPlaylistDetail(state.editingPlaylistId);
+      } else {
+        createPlaylist(name, desc, selectedColor);
+        showToast(`「${name}」を作成しました`, 'success');
+      }
+      
+      closeCreatePlaylistModal();
+      if (state.view === 'library') renderLibraryView();
+    });
+  }
+
+  // Enter key in name input
+  const nameInput = document.getElementById('playlistNameInput');
+  if (nameInput) {
+    nameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('playlistModalCreate').click();
+    });
+  }
+
+  // Add-to-playlist modal
+  const addClose = document.getElementById('addToPlaylistModalClose');
+  if (addClose) addClose.addEventListener('click', closeAddToPlaylistModal);
+
+  const addBackdrop = document.getElementById('addToPlaylistModalBackdrop');
+  if (addBackdrop) {
+    addBackdrop.addEventListener('click', e => {
+      if (e.target === addBackdrop) closeAddToPlaylistModal();
+    });
+  }
+
+  // Play All button
+  const playAllBtn = document.getElementById('playlistPlayAllBtn');
+  if (playAllBtn) {
+    playAllBtn.addEventListener('click', () => {
+      if (state.activePlaylistId) playPlaylist(state.activePlaylistId);
+    });
+  }
+
+  // Edit playlist button
+  const editBtn = document.getElementById('playlistEditBtn');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => {
+      if (state.activePlaylistId) openCreatePlaylistModal(state.activePlaylistId);
+    });
+  }
+
+  // Delete playlist button
+  const deleteBtn = document.getElementById('playlistDeleteBtn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', () => {
+      const pl = PLAYLISTS.find(p => p.id === state.activePlaylistId);
+      if (!pl) return;
+      if (!confirm(`「${pl.name}」を削除しますか？`)) return;
+      deletePlaylist(state.activePlaylistId);
+      showToast('プレイリストを削除しました', 'success');
+      switchView('library');
+    });
+  }
+
+  // Hook into playTrack to update detail view play state
+  const originalPlayTrack = window._origPlayTrack || playTrack;
+  // Update detail row states when play/pause changes
+  const origTogglePlayPause = togglePlayPause;
+}
+
+/* ===================================================
+   PWA & Offline Functionality
+   =================================================== */
+
+let deferredPrompt;
+const installPrompt = document.getElementById('installPrompt');
+const installConfirmBtn = document.getElementById('installConfirmBtn');
+const installCancelBtn = document.getElementById('installCancelBtn');
+const offlineBanner = document.getElementById('offlineBanner');
+
+// 1. Service Worker Registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => console.log('SW Registered!', reg.scope))
+      .catch(err => console.warn('SW Registration failed!', err));
+  });
+}
+
+// 2. Install Prompt Logic
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (installPrompt) {
+    installPrompt.style.display = 'flex';
+    setTimeout(() => installPrompt.classList.add('show'), 50);
+  }
+});
+
+if (installCancelBtn) {
+  installCancelBtn.addEventListener('click', () => {
+    installPrompt.classList.remove('show');
+    setTimeout(() => installPrompt.style.display = 'none', 400);
+    deferredPrompt = null;
+  });
+}
+
+if (installConfirmBtn) {
+  installConfirmBtn.addEventListener('click', async () => {
+    installPrompt.classList.remove('show');
+    setTimeout(() => installPrompt.style.display = 'none', 400);
+    
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`User response to the install prompt: ${outcome}`);
+      deferredPrompt = null;
+    }
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  console.log('PWA was installed');
+  if (installPrompt) {
+    installPrompt.classList.remove('show');
+    setTimeout(() => installPrompt.style.display = 'none', 400);
+  }
+});
+
+// 3. Network Status Handling
+function updateNetworkStatus() {
+  if (navigator.onLine) {
+    if (offlineBanner.classList.contains('show')) {
+      offlineBanner.classList.remove('show');
+      setTimeout(() => offlineBanner.style.display = 'none', 300);
+    }
+  } else {
+    offlineBanner.style.display = 'flex';
+    setTimeout(() => offlineBanner.classList.add('show'), 50);
+  }
+}
+
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+if (!navigator.onLine) updateNetworkStatus();

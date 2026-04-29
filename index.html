@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="mp4logo.png" />
+  <link rel="apple-touch-icon" href="mp4logo.png" />
+  <link rel="manifest" href="manifest.json?v=3" />
+  <meta name="theme-color" content="#000000" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -31,8 +35,8 @@
         </a>
       </div>
       <nav class="header-nav">
-        <a href="#" class="nav-link active">Collection</a>
-        <a href="#" class="nav-link">Library</a>
+        <a href="#" class="nav-link active" id="navCollection">Collection</a>
+        <a href="#" class="nav-link" id="navLibrary">Library</a>
       </nav>
       <div class="header-right">
         <button class="reset-btn" id="resetBtn" aria-label="ライブラリをデフォルトに戻す" title="ライブラリをリセット">
@@ -48,66 +52,70 @@
           </svg>
           <input type="text" placeholder="Search tracks…" id="searchInput" aria-label="Search tracks" />
         </div>
+        <button class="hamburger-menu" id="hamburgerMenu" aria-label="メニューを開く">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
       </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="main-content" id="mainContent">
-
-      <!-- Hero Section -->
-      <section class="hero-section" id="heroSection" aria-label="Featured track hero">
-        <div class="hero-text">
-          <p class="hero-eyebrow">Now Trending</p>
-          <h1 class="hero-title" id="heroTitle">Discover<br/><span class="gradient-text">Cinematic Sound</span></h1>
-          <p class="hero-subtitle" id="heroSubtitle">Immerse yourself in visual music experiences</p>
-          <button class="hero-btn" id="heroPlayBtn" aria-label="Play featured track">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
-            Play Featured
+    <!-- Hero Section (Shared across views) -->
+    <section class="hero-section" id="heroSection" aria-label="Featured track hero">
+      <div class="hero-text">
+        <p class="hero-eyebrow">Now Trending</p>
+        <h1 class="hero-title" id="heroTitle">Discover<br/><span class="gradient-text">Cinematic Sound</span></h1>
+        <p class="hero-subtitle" id="heroSubtitle">Immerse yourself in visual music experiences</p>
+        <button class="hero-btn" id="heroPlayBtn" aria-label="Play featured track">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+          Play Featured
+        </button>
+      </div>
+      <div class="hero-visual-container">
+        <!-- Aspect Ratio Switcher -->
+        <div class="aspect-switcher" role="group" aria-label="アスペクト比切り替え">
+          <button class="aspect-btn" id="aspectLandscape" data-aspect="landscape" title="横長 (1920×1080)" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="5" width="20" height="14" rx="2"/>
+            </svg>
+            <span>16:9</span>
+          </button>
+          <button class="aspect-btn active" id="aspectSquare" data-aspect="square" title="正方形 (1:1)" aria-pressed="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            <span>1:1</span>
+          </button>
+          <button class="aspect-btn" id="aspectPortrait" data-aspect="portrait" title="縦長 (1080×1920)" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2"/>
+            </svg>
+            <span>9:16</span>
           </button>
         </div>
-        <div class="hero-visual-container">
-          <!-- Aspect Ratio Switcher -->
-          <div class="aspect-switcher" role="group" aria-label="アスペクト比切り替え">
-            <button class="aspect-btn" id="aspectLandscape" data-aspect="landscape" title="横長 (1920×1080)" aria-pressed="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="5" width="20" height="14" rx="2"/>
-              </svg>
-              <span>16:9</span>
-            </button>
-            <button class="aspect-btn active" id="aspectSquare" data-aspect="square" title="正方形 (1:1)" aria-pressed="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-              </svg>
-              <span>1:1</span>
-            </button>
-            <button class="aspect-btn" id="aspectPortrait" data-aspect="portrait" title="縦長 (1080×1920)" aria-pressed="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="5" y="2" width="14" height="20" rx="2"/>
-              </svg>
-              <span>9:16</span>
-            </button>
-          </div>
-          <div class="hero-visual aspect-square" id="heroVisual">
-            <div class="hero-video-wrapper" id="heroVideoWrapper">
-              <video id="heroVideo" muted loop playsinline webkit-playsinline class="hero-video" preload="auto">
-                <source src="" type="video/mp4" />
-              </video>
-              <div class="hero-video-overlay">
-                <!-- フルスクリーンボタン -->
-                <button class="hero-fs-btn" id="heroFsBtn" aria-label="フルスクリーン表示" title="フルスクリーン">
-                  <svg class="hero-fs-icon-expand" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                  </svg>
-                  <svg class="hero-fs-icon-compress" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none">
-                    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
-                  </svg>
-                </button>
-              </div>
+        <div class="hero-visual aspect-square" id="heroVisual">
+          <div class="hero-video-wrapper" id="heroVideoWrapper">
+            <video id="heroVideo" muted loop playsinline webkit-playsinline class="hero-video" preload="metadata">
+              <source src="" type="video/mp4" />
+            </video>
+            <div class="hero-video-overlay">
+              <!-- フルスクリーンボタン -->
+              <button class="hero-fs-btn" id="heroFsBtn" aria-label="フルスクリーン表示" title="フルスクリーン">
+                <svg class="hero-fs-icon-expand" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+                <svg class="hero-fs-icon-compress" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+                </svg>
+              </button>
             </div>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
+    <!-- Main Content (Collection View Content) -->
+    <main class="main-content" id="mainContent">
       <!-- Genre Tags -->
       <section class="genre-section" aria-label="Genre filter">
         <div class="genre-tags" id="genreTags" role="list">
@@ -138,6 +146,71 @@
         <div class="track-grid" id="trackGrid" aria-label="Track list"></div>
       </section>
     </main>
+
+    <!-- ===== Library View (Playlist List) ===== -->
+    <section class="library-view" id="libraryView" aria-label="プレイリスト一覧" style="display:none">
+      <div class="library-header">
+        <div class="library-header-text">
+          <p class="hero-eyebrow">Your Music</p>
+          <h2 class="library-title">Library</h2>
+          <p class="library-subtitle">プレイリストを作成して、お気に入りのトラックを整理しよう</p>
+        </div>
+        <button class="create-playlist-btn" id="createPlaylistBtn" aria-label="新しいプレイリストを作成">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          新しいプレイリスト
+        </button>
+      </div>
+      <!-- Playlist grid rendered by JS -->
+      <div class="playlist-grid" id="playlistGrid"></div>
+    </section>
+
+    <!-- ===== Playlist Detail View ===== -->
+    <section class="playlist-detail-view" id="playlistDetailView" aria-label="プレイリスト詳細" style="display:none">
+      <div class="playlist-detail-header">
+        <button class="back-btn" id="backToLibraryBtn" aria-label="ライブラリに戻る">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Library
+        </button>
+        <div class="playlist-detail-meta">
+          <div class="playlist-detail-cover" id="playlistDetailCover"></div>
+          <div class="playlist-detail-info">
+            <p class="playlist-detail-label">PLAYLIST</p>
+            <h2 class="playlist-detail-name" id="playlistDetailName">—</h2>
+            <p class="playlist-detail-desc" id="playlistDetailDesc"></p>
+            <p class="playlist-detail-count" id="playlistDetailCount">0 tracks</p>
+          </div>
+        </div>
+        <div class="playlist-detail-actions">
+          <button class="playlist-play-all-btn" id="playlistPlayAllBtn" aria-label="すべて再生">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 3l14 9-14 9V3z"/>
+            </svg>
+            すべて再生
+          </button>
+          <button class="playlist-edit-btn" id="playlistEditBtn" aria-label="プレイリスト名を変更">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            名前を変更
+          </button>
+          <button class="playlist-delete-btn" id="playlistDeleteBtn" aria-label="プレイリストを削除">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            </svg>
+            削除
+          </button>
+        </div>
+      </div>
+      <!-- Track rows rendered by JS -->
+      <div class="playlist-track-list" id="playlistTrackList"></div>
+    </section>
   </div>
   <!-- Main UI Content -->
   <!-- Now Playing Bar -->
@@ -210,16 +283,19 @@
 
       <!-- Right Controls -->
       <div class="player-controls-right">
-        <button class="ctrl-btn" id="muteBtn" aria-label="Toggle mute">
-          <svg class="icon-vol" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-          </svg>
-          <svg class="icon-mute" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-            <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
-          </svg>
-        </button>
+        <!-- 音量コントロール（ポップアップ縦バー付き） -->
+        <div class="volume-popup-wrap" id="volumePopupWrap">
+          <button class="ctrl-btn" id="muteBtn" aria-label="Toggle mute" title="音量">
+            <svg class="icon-vol" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+            <svg class="icon-mute" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          </button>
+        </div>
         <div class="volume-slider-wrap">
           <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" aria-label="Volume" />
         </div>
@@ -237,6 +313,125 @@
   </div>
 
   <!-- フルスクリーンモーダルは廃止 (heroVideoWrapperを使用したネイティブフルスクリーンに移行) -->
+
+  <!-- ===== プレイリスト作成モーダル ===== -->
+  <div class="playlist-modal-backdrop" id="playlistModalBackdrop" role="dialog" aria-modal="true" aria-label="プレイリストを作成" style="display:none">
+    <div class="playlist-modal" id="playlistModal">
+      <div class="playlist-modal-header">
+        <h3 class="playlist-modal-title">新しいプレイリスト</h3>
+        <button class="playlist-modal-close" id="playlistModalClose" aria-label="閉じる">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="playlist-modal-body">
+        <div class="playlist-modal-field">
+          <label for="playlistNameInput" class="playlist-modal-label">プレイリスト名 <span class="required">*</span></label>
+          <input type="text" id="playlistNameInput" class="playlist-modal-input" placeholder="例: 夜のドライブ" maxlength="60" autocomplete="off" />
+        </div>
+        <div class="playlist-modal-field">
+          <label for="playlistDescInput" class="playlist-modal-label">説明（任意）</label>
+          <input type="text" id="playlistDescInput" class="playlist-modal-input" placeholder="プレイリストの説明…" maxlength="120" autocomplete="off" />
+        </div>
+        <div class="playlist-modal-field">
+          <label class="playlist-modal-label">テーマカラー</label>
+          <div class="playlist-color-picker" id="playlistColorPicker" role="group" aria-label="テーマカラー">
+            <button class="color-swatch active" data-color="#8b5cf6" style="background:#8b5cf6" aria-label="パープル" aria-pressed="true"></button>
+            <button class="color-swatch" data-color="#06b6d4" style="background:#06b6d4" aria-label="シアン" aria-pressed="false"></button>
+            <button class="color-swatch" data-color="#ec4899" style="background:#ec4899" aria-label="ピンク" aria-pressed="false"></button>
+            <button class="color-swatch" data-color="#10b981" style="background:#10b981" aria-label="グリーン" aria-pressed="false"></button>
+            <button class="color-swatch" data-color="#f59e0b" style="background:#f59e0b" aria-label="アンバー" aria-pressed="false"></button>
+            <button class="color-swatch" data-color="#38bdf8" style="background:#38bdf8" aria-label="スカイ" aria-pressed="false"></button>
+          </div>
+        </div>
+      </div>
+      <div class="playlist-modal-footer">
+        <button class="playlist-modal-cancel" id="playlistModalCancel">キャンセル</button>
+        <button class="playlist-modal-create" id="playlistModalCreate">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== トラックをプレイリストへ追加 サブモーダル ===== -->
+  <div class="playlist-modal-backdrop" id="addToPlaylistModalBackdrop" role="dialog" aria-modal="true" aria-label="プレイリストへ追加" style="display:none">
+    <div class="playlist-modal" id="addToPlaylistModal">
+      <div class="playlist-modal-header">
+        <h3 class="playlist-modal-title">プレイリストへ追加</h3>
+        <button class="playlist-modal-close" id="addToPlaylistModalClose" aria-label="閉じる">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="playlist-modal-body">
+        <div class="add-to-playlist-list" id="addToPlaylistList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Nav Overlay -->
+  <div class="mobile-nav-overlay" id="mobileNavOverlay">
+    <div class="mobile-nav-content">
+      <button class="mobile-nav-close" id="mobileNavClose" aria-label="メニューを閉じる">&times;</button>
+      <div class="mobile-nav-links">
+        <a href="#" class="mobile-nav-link active" id="mobileNavCollection">Collection</a>
+        <a href="#" class="mobile-nav-link" id="mobileNavLibrary">Library</a>
+      </div>
+      <div class="mobile-nav-footer">
+        <p>&copy; 2026 Kyoumei Player</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA Offline Banner -->
+  <div class="offline-banner" id="offlineBanner" style="display: none;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.58 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
+    </svg>
+    <span>You are currently offline.</span>
+  </div>
+
+  <!-- PWA Install Prompt -->
+  <div class="install-prompt" id="installPrompt" style="display: none;">
+    <div class="install-prompt-content">
+      <div class="install-prompt-icon">
+        <img src="mp4logo.png" alt="Kyoumei App Icon" />
+      </div>
+      <div class="install-prompt-text">
+        <h4>響鳴-Kyoumei- をインストール</h4>
+        <p>アプリとして追加して快適にオフライン再生</p>
+      </div>
+    </div>
+    <div class="install-prompt-actions">
+      <button class="install-cancel-btn" id="installCancelBtn">後で</button>
+      <button class="install-confirm-btn" id="installConfirmBtn">追加</button>
+    </div>
+  </div>
+
+  <!-- ===== 縦バー音量ポップアップ (body直下: backdrop-filter stacking contextの外に配置) ===== -->
+  <div class="volume-vertical-popup" id="volumeVerticalPopup" role="dialog" aria-label="音量調整">
+    <div class="volume-popup-inner">
+      <span class="volume-popup-label" id="volumePopupLabel">80%</span>
+      <div class="volume-vertical-track">
+        <input type="range" class="volume-vertical-slider" id="volumeVerticalSlider"
+          min="0" max="100" value="80" orient="vertical"
+          aria-label="音量" aria-valuemin="0" aria-valuemax="100" />
+        <div class="volume-vertical-fill" id="volumeVerticalFill"></div>
+      </div>
+      <!-- ミュートトグルボタン（ポップアップ内） -->
+      <button class="volume-popup-mute-btn" id="volumePopupMuteBtn" aria-label="ミュート切り替え" title="ミュート">
+        <svg class="icon-vol" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        </svg>
+        <svg class="icon-mute" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+        </svg>
+      </button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
