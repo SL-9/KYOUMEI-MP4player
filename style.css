@@ -1509,6 +1509,7 @@ a { text-decoration: none; color: inherit; }
 
 
 /* 縦スライダーのトラック */
+/* カスタムタッチ領域（.volume-vertical-trackをタッチ可能にする） */
 .volume-vertical-track {
   position: relative;
   width: 32px;
@@ -1516,6 +1517,10 @@ a { text-decoration: none; color: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none; /* iOSでのスクロール干渉を防止 */
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* トラック背景線（グレー） */
@@ -1531,7 +1536,7 @@ a { text-decoration: none; color: inherit; }
   border-radius: 4px;
 }
 
-/* 塚き表示（揬柄遠柄） */
+/* フィル表示（グラデーション） */
 .volume-vertical-fill {
   position: absolute;
   bottom: 0;
@@ -1545,47 +1550,10 @@ a { text-decoration: none; color: inherit; }
   height: 80%; /* 初期値 80% */
 }
 
-/* 縦方向input[type=range]: webkit */
+/* input[type=range]はiOS Safariでslider-verticalが非対応のため廃止 */
+/* タッチ操作はJSのtouchstart/touchmoveで直接trackを制御 */
 .volume-vertical-slider {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 4px;
-  height: 120px;
-  cursor: pointer;
-  outline: none;
-  background: rgba(255,255,255,0.12);
-  border-radius: 4px;
-  opacity: 0; /* カスタム描画は.volume-vertical-fillが担当， 入力はこちら */
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0;
-  margin: 0;
-  z-index: 2;
-}
-
-/* Firefox 用 */
-@-moz-document url-prefix() {
-  .volume-vertical-slider {
-    appearance: none;
-    -moz-appearance: none;
-    writing-mode: vertical-lr;
-    direction: rtl;
-    background: transparent;
-    width: 4px;
-    height: 120px;
-    opacity: 0;
-  }
-  .volume-vertical-slider::-moz-range-thumb {
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: white;
-    cursor: pointer;
-    border: none;
-    opacity: 1;
-  }
+  display: none;
 }
 
 /* Waveform Canvas */

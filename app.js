@@ -877,8 +877,7 @@ function updateVolume(val) {
   const pct = val;
   els.volumeSlider.style.background = `linear-gradient(to right, #8b5cf6 ${pct}%, rgba(255,255,255,0.12) ${pct}%)`;
 
-  // 縦スライダー同期
-  if (els.volumeVerticalSlider) els.volumeVerticalSlider.value = val;
+  // 縦スライダー同期（fillとラベルのみ、input要素はdisplay:noneのため不要）
   if (els.volumeVerticalFill)   els.volumeVerticalFill.style.height = pct + '%';
   if (els.volumePopupLabel)     els.volumePopupLabel.textContent = Math.round(val) + '%';
 
@@ -950,16 +949,53 @@ function toggleMute() {
 function initVolumePopup() {
   const popup     = els.volumeVerticalPopup;
   const wrap      = els.volumePopupWrap;
-  const slider    = els.volumeVerticalSlider;
+  const track     = document.querySelector('.volume-vertical-track');
   const muteInner = document.getElementById('volumePopupMuteBtn');
-  if (!popup || !slider) return;
+  if (!popup || !track) return;
 
-  // 縦スライダーの入力で音量変更
-  slider.addEventListener('input', e => {
-    updateVolume(parseInt(e.target.value));
+  // track の高さに基づいて音量を計算するユーティリティ
+  function calcVolumeFromY(clientY) {
+    const rect = track.getBoundingClientRect();
+    // 上端が100%, 下端が0%
+    const ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    return Math.round(ratio * 100);
+  }
+
+  // ── タッチイベント（iOS / Android対応） ────────────────────────────
+  track.addEventListener('touchstart', e => {
+    // ページスクロールを止めてスライダー操作を優先
+    e.preventDefault();
+    e.stopPropagation();
+    const vol = calcVolumeFromY(e.touches[0].clientY);
+    updateVolume(vol);
+  }, { passive: false });
+
+  track.addEventListener('touchmove', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const vol = calcVolumeFromY(e.touches[0].clientY);
+    updateVolume(vol);
+  }, { passive: false });
+
+  // ── マウスイベント（デスクトップ対応） ─────────────────────────────
+  let isDraggingVol = false;
+
+  track.addEventListener('mousedown', e => {
+    isDraggingVol = true;
+    updateVolume(calcVolumeFromY(e.clientY));
+    e.preventDefault();
   });
 
-  // ポップアップ内ミュートボタン
+  document.addEventListener('mousemove', e => {
+    if (!isDraggingVol) return;
+    updateVolume(calcVolumeFromY(e.clientY));
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDraggingVol = false;
+  });
+
+  // ── ポップアップ内ミュートボタン ────────────────────────────────────
   if (muteInner) {
     muteInner.addEventListener('click', e => {
       e.stopPropagation();
@@ -967,9 +1003,7 @@ function initVolumePopup() {
     });
   }
 
-  // ポップアップ外クリックで閉じる
-  // ポップアップはbody直下に移動済みのため、muteBtn と popup 自身のどちらも
-  // 含まないクリックを「外クリック」と判断する
+  // ── ポップアップ外クリック / タップで閉じる ──────────────────────────
   document.addEventListener('click', e => {
     const inMuteBtn = wrap ? wrap.contains(e.target) : (els.muteBtn && els.muteBtn.contains(e.target));
     const inPopup   = popup.contains(e.target);
@@ -978,14 +1012,14 @@ function initVolumePopup() {
     }
   });
 
-  // タッチイベント：スライダーのタッチ操作をサポート
-  slider.addEventListener('touchmove', e => {
-    const touch = e.touches[0];
-    const rect  = slider.getBoundingClientRect();
-    // 縦方向：上が100%, 下が0%
-    const ratio = 1 - Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
-    updateVolume(Math.round(ratio * 100));
-    e.stopPropagation();
+  // タッチでポップアップ外タップ → 閉じる（iOSではclickが遅延するため）
+  document.addEventListener('touchend', e => {
+    if (!popup.classList.contains('open')) return;
+    const inMuteBtn = wrap ? wrap.contains(e.target) : (els.muteBtn && els.muteBtn.contains(e.target));
+    const inPopup   = popup.contains(e.target);
+    if (!inMuteBtn && !inPopup) {
+      popup.classList.remove('open');
+    }
   }, { passive: true });
 }
 
