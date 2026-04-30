@@ -35,6 +35,34 @@ const state = {
   editingPlaylistId: null,
 };
 
+// ── Audio Engine (Web Audio API for iOS Volume Control) ──────────────────────
+let audioCtx = null;
+let gainNode = null;
+let sourceNode = null;
+
+function initAudioEngine() {
+  if (audioCtx) return;
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    audioCtx = new AudioContext();
+    gainNode = audioCtx.createGain();
+    gainNode.gain.value = state.volume;
+    
+    sourceNode = audioCtx.createMediaElementSource(els.heroVideo);
+    sourceNode.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+  } catch (e) {
+    console.warn('AudioEngine Init Error:', e);
+  }
+}
+
+function resumeAudioCtx() {
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
 // ── IndexedDB & LocalStorage ──────────────────────────────────────────────────
 const DB_NAME = 'VibePlayerDB';
 const STORE_NAME = 'tracksStore';
@@ -718,6 +746,10 @@ function playTrack(id) {
 
   // Accent color from track
   updateAccentColor('#38bdf8');
+
+  // iOS Volume Control Initialization
+  initAudioEngine();
+  resumeAudioCtx();
 }
 
 function togglePlayPause() {
@@ -737,6 +769,10 @@ function togglePlayPause() {
       updatePlayIcon(true);
     }).catch(() => {});
   }
+
+  // iOS Volume Control Resume
+  initAudioEngine();
+  resumeAudioCtx();
 
   // スクロール位置リセットを防ぐため、全再描画ではなくカードアイコンのみ更新
   updateCardPlayState();
@@ -870,7 +906,15 @@ function seekTo(e) {
 // ── Volume ────────────────────────────────────────────────────────────────────
 function updateVolume(val) {
   state.volume = val / 100;
+  
+  // ネイティブ音量（デスクトップ/Android用）
   els.heroVideo.volume = state.volume;
+  
+  // GainNode音量（iOS用: iOSではvideo.volumeが効かないためAudioContextで制御）
+  if (gainNode) {
+    gainNode.gain.setValueAtTime(state.volume, audioCtx.currentTime);
+  }
+
   els.volumeSlider.value = val;
 
   // 横スライダーグラデーション
@@ -899,6 +943,9 @@ function applyMuteToggle() {
   const pIconMute = popupMuteBtn ? popupMuteBtn.querySelector('.icon-mute') : null;
 
   if (state.isMuted) {
+    els.heroVideo.muted = true;
+    if (gainNode) gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    
     if (iconVol)   iconVol.style.display  = 'none';
     if (iconMute)  iconMute.style.display = 'block';
     els.muteBtn.style.color = 'var(--accent-pink)';
@@ -906,6 +953,9 @@ function applyMuteToggle() {
     if (pIconMute) pIconMute.style.display = 'block';
     if (popupMuteBtn) popupMuteBtn.classList.add('muted');
   } else {
+    els.heroVideo.muted = false;
+    if (gainNode) gainNode.gain.setValueAtTime(state.volume, audioCtx.currentTime);
+
     if (iconVol)   iconVol.style.display  = 'block';
     if (iconMute)  iconMute.style.display = 'none';
     els.muteBtn.style.color = '';
